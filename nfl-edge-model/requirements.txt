@@ -1,0 +1,21 @@
+# Data
+nfl_data_py>=0.3.0
+pandas>=2.0.0
+numpy>=1.26.0
+
+# Supabase / Postgres
+supabase>=2.0.0
+psycopg2-binary>=2.9.0
+
+# HTTP / Odds API
+requests>=2.31.0
+
+# Modeling
+scipy>=1.11.0
+statsmodels>=0.14.0
+
+# Scheduling / env
+python-dotenv>=1.0.0
+
+# Email alerts
+# (smtplib is stdlib — no package needed)

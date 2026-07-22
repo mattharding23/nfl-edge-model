@@ -1,0 +1,40 @@
+name: Model Run
+
+# Placeholder schedule — to be finalized in Step 6/8 of the build.
+# Cron is UTC-based; NFL kickoff times shift with US DST, so this
+# needs either two cron entries (DST on/off) or a runtime offset
+# check, same as the mlb-hr-model workflows handle it.
+#
+# Planned passes:
+#   - Tue/Wed: initial line
+#   - Thu evening: injury report re-run
+#   - ~90 min pre-kickoff: weather/inactives final pass
+on:
+  workflow_dispatch: {}
+  # schedule:
+  #   - cron: "0 14 * * 2"   # placeholder — Tue initial line, UTC
+
+jobs:
+  run-model:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pipeline
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          SMS_GATEWAY_ADDRESS: ${{ secrets.SMS_GATEWAY_ADDRESS }}
+        run: echo "placeholder — pipeline script wired up in Step 1 of the build"
