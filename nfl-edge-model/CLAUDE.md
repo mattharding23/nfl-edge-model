@@ -104,6 +104,51 @@ Same no-server pattern as the existing `mlb-hr-model` repo:
 - **No paper-trading window.** Backtest + CLV validation is the gate
   — live alerts start Week 1.
 
+## Recency weighting (design requirement for Layers 1–4, not yet built)
+
+Separate from walk-forward validation (which handles chronology/leakage)
+— this is about weighting *within* the training window, given rule
+changes, roster/franchise shifts, and a drifting league-wide scoring
+environment over a 16–26 year lookback.
+
+**In model coefficients:**
+- Layer 1 (power ratings) self-solves this via sequential Bayesian
+  updating — no extra work needed, but when built, confirm the
+  implementation actually decays old evidence rather than treating all
+  historical weeks as equally informative forever.
+- Layers 2–4 (matchup deltas, situational/weather/rest coefficients) are
+  likely fit via regression over the historical window, so they need an
+  explicit recency weighting scheme (e.g. exponential decay by season)
+  rather than equal weighting across all years.
+- Structural changes (team relocations, dome vs. outdoor) belong as
+  explicit context features (e.g. venue/roof type as an input), not
+  something recency weighting alone fixes — decaying old data doesn't
+  undo a model that's implicitly learned stale team-level assumptions.
+- Decay rate must be tunable **per mechanism**, not one global setting.
+  Thin-sample mechanisms (international games, rest+travel, unusual
+  weather spots) risk falling below minimum sample size gates if decay
+  is too aggressive — revisit explicitly when the situational layer is
+  designed.
+
+**In confidence-tier calibration:**
+- Don't average CLV performance equally across the full backtest window
+  — a mechanism strong in 2010–2018 but decayed since (books get sharper
+  over time) should get a lower tier reflecting current reality, not the
+  inflated historical average.
+- Segment each mechanism's backtest CLV by era (e.g. thirds or halves of
+  the window) and check the trend — stable, improving, decaying — rather
+  than computing one all-time average.
+- Use a **gentler/longer decay for tier calibration than for model
+  coefficients**. Coefficients tolerate more aggressive decay because
+  Bayesian updating smooths outliers; tiers are more sensitive to
+  small-sample noise and risk the same "3-game cold streak" problem the
+  minimum sample size gates already guard against.
+- Conceptually the same tool as the in-season drift monitoring below,
+  just applied at a multi-year backtest timescale instead of a
+  weekly/monthly live timescale — design these as one coherent
+  decay/drift framework rather than two unrelated mechanisms if a clean
+  way to unify them surfaces during that build.
+
 ## In-season change management (build alongside the dashboard, not later)
 
 - Config-driven parameters (thresholds, confidence cutoffs, feature
