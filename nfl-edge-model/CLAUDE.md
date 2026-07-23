@@ -209,8 +209,38 @@ requirements.txt
 9. In-season change-management infra — build alongside step 7, not
    mid-season
 
+## Vegas win total for the preseason prior (follow-up, not built yet)
+
+Odds API has no season-long win totals market for NFL — confirmed
+empirically (no separate outrights/futures sport entry the way there is
+for Super Bowl winner) and via their own docs (`team_totals` /
+`alternate_team_totals` are single-game markets only). The preseason
+prior currently blends only last year's end-of-season rating + roster
+turnover (see Layer 1 in `scripts/power_ratings.py`).
+
+Planned approximation, once Layer 1 has real backtest results to compare
+against — **Bradley-Terry, not a full season/playoff simulator**:
+
+1. Pull each team's Super Bowl winner odds from Odds API
+   (`americanfootball_nfl_super_bowl_winner`, confirmed available —
+   `has_outrights: true`).
+2. Log-odds transform into an implied relative team-strength rating.
+3. Using the actual regular-season schedule for that year, sum each
+   team's per-game win probability against each opponent's implied
+   strength (`team_strength / (team_strength + opponent_strength)`)
+   across the season — no playoff bracket simulation.
+4. This should naturally reflect schedule strength (a team with a weak
+   schedule shows a higher expected win total than raw SB odds alone
+   would suggest) without modeling conference/division effects
+   separately.
+
+This is a **derived approximation, not a true market-based win total** —
+treat it as lower-confidence than the other two preseason-prior
+components (last year's rating, roster turnover) once it's built. Compare
+Layer 1's preseason-week accuracy with vs. without it once real backtest
+results exist; don't assume it helps.
+
 ## Open decisions (confirm during build, don't block on them)
 
 - Exact edge threshold / confidence-tier cutoffs (start conservative)
 - Which weather/injury feeds specifically (free vs paid tiers)
-- Odds API `region`/`bookmakers` handling for Bovada and theScore
