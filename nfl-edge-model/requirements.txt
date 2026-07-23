@@ -14,6 +14,9 @@ requests>=2.31.0
 scipy>=1.11.0
 statsmodels>=0.14.0
 
+# Weather (historical backtest pull)
+meteostat>=2.1.0
+
 # Scheduling / env
 python-dotenv>=1.0.0
 

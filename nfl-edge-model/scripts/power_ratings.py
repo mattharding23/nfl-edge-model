@@ -259,6 +259,7 @@ def run_power_ratings(seasons: list[int], process_var_fraction: float = DEFAULT_
     final_ratings_by_season: dict[int, dict] = {}
 
     rows = []
+    qb_rating_rows = []
     for season in seasons:
         if season - 1 in final_ratings_by_season:
             turnover = compute_roster_turnover(season)
@@ -348,6 +349,11 @@ def run_power_ratings(seasons: list[int], process_var_fraction: float = DEFAULT_
                             team_qb_baseline[team]["mean"], team_qb_baseline[team]["var"] + process_var,
                             qb_state[qb_id]["mean"], obs_var,
                         )
+                        qb_rating_rows.append({
+                            "season": season, "week": week, "qb_id": qb_id, "team": team,
+                            "qb_rating_after": qb_state[qb_id]["mean"],
+                            "team_qb_baseline_after": team_qb_baseline[team]["mean"],
+                        })
 
         final_ratings_by_season[season] = {
             t: {"off_mean": off_state[t]["mean"], "off_var": off_state[t]["var"],
@@ -355,7 +361,39 @@ def run_power_ratings(seasons: list[int], process_var_fraction: float = DEFAULT_
             for t in teams
         }
 
-    return pd.DataFrame(rows).sort_values(["season", "week", "team"]).reset_index(drop=True)
+    ratings_df = pd.DataFrame(rows).sort_values(["season", "week", "team"]).reset_index(drop=True)
+    qb_rating_history = pd.DataFrame(qb_rating_rows).sort_values(["qb_id", "season", "week"]).reset_index(drop=True)
+    return ratings_df, qb_rating_history
+
+
+def qb_rating_entering(qb_id: str, season: int, week: int, qb_rating_history: pd.DataFrame) -> float:
+    """A QB's rating entering (season, week), forward-filled from their
+    last actual appearance -- the mean doesn't move between appearances
+    in a Kalman filter, only the variance (not tracked here) grows.
+    Falls back to LEAGUE_AVG for a QB with no prior appearances at all
+    (e.g. a rookie backup who's never played).
+    """
+    prior = qb_rating_history[
+        (qb_rating_history["qb_id"] == qb_id)
+        & ((qb_rating_history["season"] < season) | ((qb_rating_history["season"] == season) & (qb_rating_history["week"] < week)))
+    ]
+    if prior.empty:
+        return LEAGUE_AVG
+    return float(prior.iloc[-1]["qb_rating_after"])
+
+
+def team_qb_baseline_entering(team: str, season: int, week: int, qb_rating_history: pd.DataFrame) -> float:
+    """A team's rolling 'typical starting QB level' entering (season,
+    week) -- same forward-fill logic as qb_rating_entering, keyed by team
+    instead of qb_id.
+    """
+    prior = qb_rating_history[
+        (qb_rating_history["team"] == team)
+        & ((qb_rating_history["season"] < season) | ((qb_rating_history["season"] == season) & (qb_rating_history["week"] < week)))
+    ]
+    if prior.empty:
+        return LEAGUE_AVG
+    return float(prior.iloc[-1]["team_qb_baseline_after"])
 
 
 if __name__ == "__main__":
@@ -373,8 +411,8 @@ if __name__ == "__main__":
     print(decay_df.to_string(index=False))
 
     print("\n=== Running Layer 1 on real data ===")
-    ratings = run_power_ratings(args.seasons)
-    print(f"Rows: {len(ratings)}")
+    ratings, qb_rating_history = run_power_ratings(args.seasons)
+    print(f"Rows: {len(ratings)}, QB rating history rows: {len(qb_rating_history)}")
 
     obs_var, process_var = calibrate_noise_params(compute_weekly_team_stats(args.seasons))
     print(f"\nCalibrated from real data: obs_var={obs_var:.4f}, process_var={process_var:.4f} "

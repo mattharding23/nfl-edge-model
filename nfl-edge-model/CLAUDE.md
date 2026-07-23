@@ -240,7 +240,51 @@ components (last year's rating, roster turnover) once it's built. Compare
 Layer 1's preseason-week accuracy with vs. without it once real backtest
 results exist; don't assume it helps.
 
+## Step 3 backtest findings (Layers 1+2 only, 2013-2024, 3,084 games)
+
+Walk-forward backtest (`scripts/backtest.py`) of the core model using
+only power ratings + matchup adjustments, before situational/market
+layers existed. Full diagnostic methodology (pooled + season-by-season
+significance tests, ATS slice analysis, moneyline reliability curve) is
+in the script itself; key findings to carry forward:
+
+- **Mechanics validated**: home-field-advantage recalibrated per season
+  organically detected the real, documented COVID-era HFA drop (~2.4-2.7
+  pts pre-2020 → ~1.3-2.1 pts 2020+) — evidence the walk-forward
+  calibration is doing real work, not just bookkeeping.
+- **No aggregate edge yet**: spread/total signal correlation with the
+  closing line is ~0 and flips sign season to season (classic noise
+  signature). Moneyline Brier/log-loss worse than the market's own
+  de-vigged probabilities in every single graded season — but the
+  reliability curve shows our probabilities track the market's closely
+  bin-by-bin, so this reads as **missing information, not a broken
+  probability-conversion mechanism**.
+- **A specific, non-uniform bias was found**: ATS performance is
+  statistically indistinguishable from 50% when we disagree with the
+  market toward the *underdog* or only mildly (≤4pts) — but
+  significantly *below* 50% specifically when we pick the **favorite**
+  (44.5% win rate, n=512, p=0.013) or disagree **strongly** (4pts+:
+  46.8%, n=974, p=0.047). Working hypothesis: EPA-based ratings likely
+  overrate strong favorites (garbage-time/blowout inflation,
+  insufficient shrinkage at the rating extremes) in a way the market
+  already discounts via context Layers 1+2 don't have (injuries,
+  trap-game awareness, opponent depth) — situational context (Layer 3)
+  is the natural candidate to correct this specifically. **Check this
+  explicitly with the same slice methodology whenever Layer 3 (and
+  later Layer 4) get re-backtested — don't just report aggregate
+  numbers.**
+
+## Data feed decisions (resolved)
+
+- **Weather**: `meteostat` (free) for historical backtest pull; NWS
+  `api.weather.gov` (free) for live in-season forecasts.
+- **Injuries**: `nfl_data_py.import_injuries()` for historical backtest;
+  self-scraped official NFL injury report for live in-season updates
+  (Thu practice report pass + ~90 min pre-kickoff final pass).
+- **No paid data vendor for v1** — Sportradar/SportsDataIO priced out at
+  $500+/month sales-gated contracts, not justified before the model
+  proves CLV. Revisit later only if the scrape proves unreliable.
+
 ## Open decisions (confirm during build, don't block on them)
 
 - Exact edge threshold / confidence-tier cutoffs (start conservative)
-- Which weather/injury feeds specifically (free vs paid tiers)
