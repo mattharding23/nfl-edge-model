@@ -56,7 +56,7 @@ import numpy as np
 import pandas as pd
 import nfl_data_py as nfl
 
-from pbp import load_pbp
+from pbp import load_pbp, normalize_team_code, retry_network_call
 
 LEAGUE_AVG = 0.0  # ratings are relative to league average each season
 
@@ -112,9 +112,9 @@ def calibrate_noise_params(weekly_stats: pd.DataFrame, process_var_fraction: flo
     return obs_var, process_var
 
 
-def compute_weekly_team_stats(seasons: list[int]) -> pd.DataFrame:
+def compute_weekly_team_stats(seasons: list[int], pbp: pd.DataFrame | None = None) -> pd.DataFrame:
     """Offense/defense EPA per play, pace, from PBP. One row per team-week."""
-    pbp = load_pbp(seasons)
+    pbp = load_pbp(seasons) if pbp is None else pbp
     plays = pbp.dropna(subset=["epa", "posteam", "defteam"])
     plays = plays[plays["play_type"].isin(["pass", "run"])]
 
@@ -135,12 +135,12 @@ def compute_weekly_team_stats(seasons: list[int]) -> pd.DataFrame:
     return stats.sort_values(["season", "week", "team"]).reset_index(drop=True)
 
 
-def compute_success_rate_by_down(seasons: list[int]) -> pd.DataFrame:
+def compute_success_rate_by_down(seasons: list[int], pbp: pd.DataFrame | None = None) -> pd.DataFrame:
     """Descriptive/diagnostic only -- not fed into the Kalman state in this
     build. Reserved for Layer 3 situational use (e.g. short-yardage,
     down-specific context) or a future refinement of the core rating.
     """
-    pbp = load_pbp(seasons)
+    pbp = load_pbp(seasons) if pbp is None else pbp
     plays = pbp.dropna(subset=["epa", "posteam", "down", "success"])
     return plays.groupby(["season", "week", "posteam", "down"]).agg(
         success_rate=("success", "mean"),
@@ -148,13 +148,13 @@ def compute_success_rate_by_down(seasons: list[int]) -> pd.DataFrame:
     ).reset_index().rename(columns={"posteam": "team"})
 
 
-def compute_qb_starters(seasons: list[int]) -> pd.DataFrame:
+def compute_qb_starters(seasons: list[int], pbp: pd.DataFrame | None = None) -> pd.DataFrame:
     """Per team-week starting QB, determined empirically from PBP dropback
     volume (whoever had the plurality of that team's dropbacks that week)
     rather than trusting the pre-game schedule listing -- this reflects
     who actually played, including in-game changes.
     """
-    pbp = load_pbp(seasons)
+    pbp = load_pbp(seasons) if pbp is None else pbp
     dropbacks = pbp[(pbp["qb_dropback"] == 1) & pbp["passer_player_id"].notna()]
     counts = dropbacks.groupby(["season", "week", "posteam", "passer_player_id", "passer_player_name"]).size()
     counts = counts.reset_index(name="dropbacks")
@@ -163,11 +163,11 @@ def compute_qb_starters(seasons: list[int]) -> pd.DataFrame:
     return starters.rename(columns={"posteam": "team", "passer_player_id": "qb_id", "passer_player_name": "qb_name"})
 
 
-def compute_qb_weekly_epa(seasons: list[int]) -> pd.DataFrame:
+def compute_qb_weekly_epa(seasons: list[int], pbp: pd.DataFrame | None = None) -> pd.DataFrame:
     """Each starting QB's own EPA/dropback that week (for the QB rating,
     independent of team-level offensive rating).
     """
-    pbp = load_pbp(seasons)
+    pbp = load_pbp(seasons) if pbp is None else pbp
     dropbacks = pbp[(pbp["qb_dropback"] == 1) & pbp["passer_player_id"].notna() & pbp["epa"].notna()]
     qb_epa = dropbacks.groupby(["season", "week", "posteam", "passer_player_id"]).agg(
         qb_epa=("epa", "mean"),
@@ -183,8 +183,17 @@ def compute_roster_turnover(season: int) -> pd.DataFrame:
     uncertainty accordingly.
     """
     prior_season = season - 1
-    snaps = nfl.import_snap_counts([prior_season])
-    roster = nfl.import_seasonal_rosters([season])
+    if prior_season < 2012:
+        # nfl_data_py.import_snap_counts has no data before 2012 -- a real
+        # coverage limit, not a transient failure. build_preseason_prior
+        # already falls back to returning_pct=0.5 (average turnover
+        # assumed) when no row is found, which is the right degraded
+        # behavior for these early transitions rather than a crash.
+        return pd.DataFrame(columns=["season", "team", "returning_off_pct", "returning_def_pct", "returning_pct"])
+    snaps = retry_network_call(nfl.import_snap_counts, [prior_season])
+    snaps = snaps.copy()
+    snaps["team"] = snaps["team"].map(normalize_team_code)  # snap_counts uses the period-accurate code (e.g. OAK); rosters/PBP use the current one (LV)
+    roster = retry_network_call(nfl.import_seasonal_rosters, [season])
 
     current_ids = set(roster["pfr_id"].dropna())
 
@@ -229,16 +238,18 @@ def build_preseason_prior(team: str, season: int, final_ratings: dict, turnover:
     return off_mean, off_var, def_mean, def_var
 
 
-def run_power_ratings(seasons: list[int], process_var_fraction: float = DEFAULT_PROCESS_VAR_FRACTION) -> pd.DataFrame:
+def run_power_ratings(seasons: list[int], process_var_fraction: float = DEFAULT_PROCESS_VAR_FRACTION,
+                       pbp: pd.DataFrame | None = None) -> pd.DataFrame:
     """Main driver. Returns one row per team-week with ratings *entering*
     that week (i.e. walk-forward safe -- these are the values you'd use
     to predict that week's game, not values informed by it).
     """
-    weekly_stats = compute_weekly_team_stats(seasons)
+    pbp = load_pbp(seasons) if pbp is None else pbp  # loaded once and reused -- these three all used to redownload independently
+    weekly_stats = compute_weekly_team_stats(seasons, pbp=pbp)
     obs_var, process_var = calibrate_noise_params(weekly_stats, process_var_fraction)
 
-    starters = compute_qb_starters(seasons)
-    qb_epa = compute_qb_weekly_epa(seasons)
+    starters = compute_qb_starters(seasons, pbp=pbp)
+    qb_epa = compute_qb_weekly_epa(seasons, pbp=pbp)
 
     teams = sorted(weekly_stats["team"].dropna().unique())
     off_state = {t: {"mean": LEAGUE_AVG, "var": PRESEASON_EXTRA_VAR * 3} for t in teams}
@@ -259,8 +270,10 @@ def run_power_ratings(seasons: list[int], process_var_fraction: float = DEFAULT_
                 team_qb_baseline[t]["var"] += PRESEASON_EXTRA_VAR
 
         season_weeks = sorted(weekly_stats.loc[weekly_stats["season"] == season, "week"].unique())
-        season_pbp_games = nfl.import_schedules([season])
-        season_pbp_games = season_pbp_games[season_pbp_games["game_type"] != "PRE"]
+        season_pbp_games = retry_network_call(nfl.import_schedules, [season])
+        season_pbp_games = season_pbp_games[season_pbp_games["game_type"] != "PRE"].copy()
+        season_pbp_games["home_team"] = season_pbp_games["home_team"].map(normalize_team_code)
+        season_pbp_games["away_team"] = season_pbp_games["away_team"].map(normalize_team_code)
 
         for week in season_weeks:
             week_games = season_pbp_games[season_pbp_games["week"] == week]

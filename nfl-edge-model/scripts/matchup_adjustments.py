@@ -54,17 +54,17 @@ import pandas as pd
 import statsmodels.api as sm
 import nfl_data_py as nfl
 
-from pbp import load_pbp
+from pbp import load_pbp, normalize_team_code, retry_network_call
 
 SEASON_DECAY_RATE = 0.75  # tunable; see module docstring
 
 
-def compute_weekly_split_stats(seasons: list[int]) -> pd.DataFrame:
+def compute_weekly_split_stats(seasons: list[int], pbp: pd.DataFrame | None = None) -> pd.DataFrame:
     """Rush/pass-split offense & defense stats, plus sack rates, per
     team-week. Layer 1's weekly stats are whole-game; Layer 2 needs the
     rush/pass split to isolate O-line/D-line-specific effects.
     """
-    pbp = load_pbp(seasons)
+    pbp = load_pbp(seasons) if pbp is None else pbp
 
     rush = pbp[(pbp["rush_attempt"] == 1) & pbp["epa"].notna() & pbp["posteam"].notna()]
     off_rush = rush.groupby(["season", "week", "posteam"]).agg(
@@ -149,8 +149,13 @@ def build_game_level_dataset(seasons: list[int]) -> pd.DataFrame:
     stats = compute_weekly_split_stats(seasons)
     stats = add_entering_week_features(stats)
 
-    games = nfl.import_schedules(seasons)
-    games = games[games["game_type"] != "PRE"]
+    games = retry_network_call(nfl.import_schedules, seasons)
+    games = games[games["game_type"] != "PRE"].copy()
+    # import_schedules() uses the period-accurate team code (OAK/SD/STL);
+    # compute_weekly_split_stats (PBP-derived) always uses the franchise's
+    # current code -- normalize so old-era relocated-franchise games match.
+    games["home_team"] = games["home_team"].map(normalize_team_code)
+    games["away_team"] = games["away_team"].map(normalize_team_code)
 
     rows = []
     for _, g in games.iterrows():
@@ -275,7 +280,7 @@ if __name__ == "__main__":
     stats = add_entering_week_features(stats)
 
     latest = args.seasons[-1]
-    games = nfl.import_schedules([latest])
+    games = retry_network_call(nfl.import_schedules, [latest])
     games = games[(games["game_type"] != "PRE") & (games["week"] == games["week"].max() - 4)]
 
     for _, g in games.head(5).iterrows():
