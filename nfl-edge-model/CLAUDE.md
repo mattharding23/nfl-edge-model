@@ -380,6 +380,53 @@ SRS-style opponent-adjustment mechanism itself, Layer 2's matchup-delta
 terms, or a Layer 4/market-side (public money on favorites) explanation
 that a ratings-only model structurally can't see.
 
+## Market-wide favorite bias — confirmed real, but too small to be the whole story
+
+Follow-up diagnostic (exploratory only) tested whether the favorite-side
+bias is inherited from a known market-wide phenomenon (public money
+skewing lines toward favorites — the "favorite-longshot bias" documented
+in sports-betting literature generally) rather than something our model
+introduces. Used the full closing-line dataset from `historical_games`
+(7,050 non-pickem games), independent of whether our model ever weighed
+in on the game.
+
+- **Market-wide favorite ATS cover rate: ~48.7%**, remarkably stable
+  across every window tested — full history 1999-2025 (n=7,050, 48.72%,
+  p=0.032 vs 50%), 2010-2024 (n=3,965, 48.73%, p=0.109), and 2013-2024
+  matching Step 3's exact graded range (n=3,185, 48.73%, p=0.151). The
+  same point estimate recurring across three different windows, with
+  significance purely tracking sample size, is the signature of a real,
+  stable small effect, not noise — and lines up with the established
+  favorite-longshot literature. **Confirms the premise: a real
+  market-wide favorite deficit exists**, independent of our model.
+- **But it's the wrong size.** Market-wide deficit from 50%: 1.3
+  percentage points. Our model's favorite-slice bad-bet deficit from
+  50%: 5.5 points (44.5%). Our model's bias is **~4.3x larger** than the
+  raw market-wide effect — not "roughly the same size" as the
+  hypothesis's step-2 branch would need for a clean confirmation.
+
+**Conclusion: partially confirmed, not a clean accept or reject.** The
+market-wide phenomenon is real and our model isn't currently correcting
+for it — that part is worth a genuine Layer 4 design item eventually.
+But it only accounts for a fraction of what we're seeing; something in
+our own model construction is independently contributing the
+remaining, larger share. Neither "it's all market inheritance" nor "the
+market has nothing to do with it" is accurate — don't force this into
+either bucket later.
+
+**Conceptual sketch for the eventual Layer 4 item** (not built, per this
+session's scope): a favorite-side discount belongs in the edge/
+confidence-tier step, not the fair-value line itself — the fair line
+should stay an unbiased independent estimate; blending a "fade
+favorites" prior into it would make it market-derivative and defeat the
+point of having an independent rating system. This fits naturally into
+CLAUDE.md's existing backtest-derived confidence-tier design (a
+mechanism-specific discount/tier for favorite-side spread edges, tagged
+accordingly) — but since it only closes ~1.3 of the 5.5-point gap,
+finding the remaining model-specific component (opponent-adjustment
+mechanism or Layer 2 matchup deltas — still open) matters at least as
+much as this market-side item.
+
 ## Data feed decisions (resolved)
 
 - **Weather**: `meteostat` (free) for historical backtest pull; NWS
