@@ -274,6 +274,59 @@ in the script itself; key findings to carry forward:
   later Layer 4) get re-backtested — don't just report aggregate
   numbers.**
 
+## Layer 3 backtest findings (Layers 1+2+3, 2013-2024) — negative result
+
+Situational/injury layer (`scripts/situational.py`, `scripts/player_value.py`)
+was built and re-backtested specifically to test whether it narrowed the
+Step 3 favorite-side/large-disagreement bias above. **It didn't.**
+Picked-favorite win rate went 44.5% → 44.0% (slightly worse, not
+better); aggregate ATS/O-U/Brier/log-loss flat to marginally worse. A
+pooled coefficient check of all 15 Layer 3 features combined showed
+~0 R² against the Layer 1+2 residual, with only one nominally
+significant coefficient (`letdown_diff`, p=0.022) — not treated as a
+real finding given 15 near-arbitrary tests make ~0.75 false positives
+expected by chance. None of the four injury mechanisms (QB-specific,
+skill-specific, OL-coarse, DEF-coarse) showed detectable signal. Full
+methodology and numbers in `scripts/backtest.py`'s `--layer3` path and
+the `compare_bias_narrowing()` function.
+
+## Garbage-time rating-inflation hypothesis — rejected
+
+Follow-up diagnostic (not committed as pipeline code, exploratory only)
+tested whether the Step 3 bias originates in Layer 1's power ratings via
+garbage-time EPA inflating teams coming off blowouts, rather than
+missing situational context. Definition used: `wp` outside 5-95% AND
+(|score_differential|≥13 in Q4, OR ≥21 anytime in the 2nd half) — 10.8%
+of plays (2010-2024) flagged. Computed power ratings two ways (all-snap
+vs competitive-only) and compared the gap for the specific teams behind
+the Step 3 bad bets against the league-average gap over the same window:
+
+- **Favorite-slice bad bets (n=284, the stronger/cleaner of the two
+  original signals)**: gap = -0.0215 vs league -0.0029, p=0.0001,
+  Cohen's d=-0.28 — statistically real, but in the **opposite direction**
+  from the hypothesis. Garbage time *deflates* these teams' all-snap
+  rating relative to competitive-only, not inflates it (plausible
+  mechanism: teams winning big shift to conservative clock-killing
+  offense in garbage time, which drags down all-snap efficiency more
+  than it helps).
+- **Large-disagreement bad bets (n=518, the weaker original signal)**:
+  gap = +0.0048 vs league -0.0029, p=0.019, Cohen's d=+0.11 — correct
+  direction but small and inconsistent (off/def sub-components
+  individually not significant, p=0.09/0.06).
+
+**Conclusion: hypothesis rejected**, not confirmed-but-weak. The
+stronger signal points the wrong way; the weaker one is too small/
+inconsistent to lean on. Did not proceed to a shrinkage/downweighting
+fix per the diagnostic's own stopping rule. **The favorite-side bias
+most likely originates somewhere else in Layer 1/2's rating construction
+or is a market-side (Layer 4) phenomenon** — candidates for the next
+diagnostic: the Kalman filter's process/observation variance calibration
+(general insufficient shrinkage, not garbage-time-specific), the
+SRS-style opponent-adjustment mechanism, Layer 2's matchup-delta terms,
+or public-money line movement on favorites that a ratings-only model
+can't see. Re-check this bias explicitly whenever Layer 4 is backtested,
+same slice methodology as Step 3.
+
 ## Data feed decisions (resolved)
 
 - **Weather**: `meteostat` (free) for historical backtest pull; NWS
