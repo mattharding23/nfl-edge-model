@@ -472,6 +472,54 @@ candidates: Layer 2's matchup-delta terms (next up), the "hot start
 overconfidence" variant noted above, or further Layer 4/market-side
 investigation.
 
+## Layer 2 matchup-delta compounding hypothesis — rejected
+
+Follow-up diagnostic (exploratory only) tested whether Layer 2's
+rush/pass-protect matchup-delta terms compound the favorite-side bias
+by systematically pushing further toward favorites already over-rated
+by Layer 1. Decomposed each graded game's predicted margin into Layer 1
+base-rating contribution vs. Layer 2 matchup-delta contribution
+(reusing `backtest.py`'s actual calibration functions for exact
+consistency — sanity-checked against the cached Step 3 predictions,
+0.000000 mean/max difference across all 3,084 games).
+
+- **Favorite-slice bad bets (n=284)**: Layer 2 total delta d=0.152,
+  p=0.062 — small, doesn't clear significance. **Layer 1 base
+  differential d=0.806, p<0.0001** — a large, highly significant effect
+  for the same games.
+- **Large-disagreement/favorite-subset bad bets (n=56)**: Layer 2 total
+  delta d=-0.148 — small and the **wrong direction** (dampening, not
+  compounding). Layer 1 base differential d=1.560, p<0.0001 — even
+  larger.
+- **Population-wide correlation** (all 3,079 favorite picks, not just
+  bad bets): corr(Layer 2 contribution, favorite covers) = -0.030 —
+  negligible.
+
+**Conclusion: rejected.** Layer 2 isn't meaningfully compounding this
+bias — its effect is small, inconsistent in direction across the two
+slices, and non-significant. Layer 1's base rating differential, by
+contrast, is enormous and highly significant in both slices: these
+bad-bet teams really were rated far more favorably by Layer 1 than a
+typical favorite (nearly a full to 1.5 standard deviations above
+league-wide favorites) — confirming the source is squarely in Layer 1's
+base construction, not something Layer 2 adds on top.
+
+**Milestone: four Layer 1/2 construction hypotheses tested, all
+rejected or non-explanatory** (garbage-time EPA, Kalman tail
+miscalibration, opponent-adjustment convergence, Layer 2 matchup
+deltas) — against a Layer 1 base-rating signal that is clearly and
+substantially different for these teams (d=0.8-1.6) without any
+specific traceable mechanism explaining why. This is not a dead end so
+much as a signal that the explanation likely isn't a single traceable
+construction flaw. **Two live paths forward, next session's call:**
+(a) the still-unexplored "hot-start overconfidence" lead (decisive
+early-season stretches shrinking Kalman variance quickly and correctly,
+before enough season has unfolded to know if it's representative), or
+(b) accept the residual as a real, tradeable-but-unexplained bias and
+build a backtest-derived confidence-tier discount for it directly, per
+CLAUDE.md's own design philosophy of deriving confidence from what
+actually happened rather than requiring a fully explained mechanism.
+
 ## Data feed decisions (resolved)
 
 - **Weather**: `meteostat` (free) for historical backtest pull; NWS
