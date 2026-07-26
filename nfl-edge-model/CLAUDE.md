@@ -570,6 +570,110 @@ way: as backtest-derived discounts on favorite-side edges, distinct
 from the fair-value line itself, which should stay an unbiased
 independent estimate.
 
+## 2011-2012 out-of-sample holdout — the discovery magnitudes don't cleanly reconfirm
+
+Before building the confidence-tier discount, ran two validation checks
+on the favorite_side_pick / large_disagreement_pick finding:
+
+- **Stability check** (weaker — both halves were part of the original
+  discovery): favorite-side stays below 50% in both halves (46.1% early
+  2013-2018, 42.5% late 2019-2024); large-disagreement similarly (45.4%,
+  48.0%). No single outlier season driving the whole effect.
+- **2011-2012 holdout** (stronger — genuinely untouched by any of the
+  five diagnostic sessions, since it was warm-up-only data): favorite-side
+  47.2% (n=89, 95% CI [36.8%, 57.6%]); large-disagreement **50.7%**
+  (n=148, 95% CI [42.6%, 58.7%]) — technically on the *wrong* side of
+  50%. Season-by-season within the holdout, 2011 alone shows **both
+  slices above 50%** (51.4%, 53.2%) — the opposite direction from the
+  hypothesis; 2012 is closer to (but still weaker than) the original
+  pattern.
+
+**Conclusion: 44.5%/46.8% must be treated as upper bounds on plausible
+severity, not confirmed effect sizes.** The holdout doesn't reverse the
+finding outright, but it's a real, honest signal that the original
+magnitude was likely inflated by the discovery sample (regression to
+the mean) — exactly the failure mode this check existed to catch. This
+directly shaped the discount design below: a single conservative tier
+downgrade, not a numeric correction sized to 44.5%/46.8%, and built to
+be live-monitored rather than frozen.
+
+## Confidence-tier discount infrastructure (built)
+
+`scripts/confidence_tiers.py` implements `favorite_side_pick` and
+`large_disagreement_pick` as downgrade-only tags on top of whatever
+confidence tier an eventual alert-decision step (Step 6, not yet built)
+would otherwise assign — max-of-the-two combination when both fire, not
+stacked. Validated by reproducing the exact diagnostic-session counts
+against cached backtest data: n=512 (favorite_side_pick), n=974
+(large_disagreement_pick), **n=97 full-slice overlap** (not 56 — that
+was a losses-only subset from an earlier session, logged here as the
+correct figure). Config lives in `model_snapshots.config` (JSONB,
+versioned/rollback-able per the existing pattern), not hardcoded —
+inserted as snapshot `confidence_tags_v1`. `clv_ledger`, `lines_edges`,
+and `alert_history` all extended with `favorite_side_pick` /
+`large_disagreement_pick` / `tier_downgraded` columns (`scripts/schema_confidence_tags.sql`)
+so the tags are traceable at every pipeline stage, not just at grading
+time.
+
+**Scope note:** the "why tag + confidence floor" alert-decision step
+this plugs into doesn't exist in code yet (Step 6). This module is
+standalone, ready-to-wire-in infrastructure, not a modification to an
+existing alert loop.
+
+### Proposed sample-size gates and re-evaluation triggers — PENDING SIGN-OFF, not finalized
+
+Two distinct gates, deliberately different sizes for different purposes:
+
+- **Minimum sample size before *any* live-data-driven severity
+  adjustment is trusted: n=100 tagged bets, per tag, tracked
+  independently** (favorite_side_pick and large_disagreement_pick don't
+  share a counter — they can drift differently). Reasoning: a formal
+  power calculation to reliably distinguish a true 44% rate from 50% at
+  conventional power needs n≈530 — essentially the whole original
+  discovery sample, unrealistic to wait for on live data alone. n=100
+  is instead pragmatically anchored to the holdout itself: at n=89-148,
+  the 2011-2012 check was already informative enough to materially
+  change how much we trust the original numbers, even without being
+  statistically decisive. That's the bar — "informative enough to
+  matter," not "definitive."
+- **Ad hoc drift-flagging trigger (smaller n, detection only, no
+  severity change): 20 consecutive tagged bets per tag.** If the
+  rolling win rate over the last 20 tagged bets for either tag moves to
+  an extreme (proposed: >60% or <35%) — flag for review immediately, on
+  the existing "flagged for review, never auto-disabled" drift pattern
+  from CLAUDE.md's in-season change management. This exists to catch
+  something going obviously wrong (or obviously right, e.g. the tag
+  turning out unnecessary) well before the n=100 floor, without
+  authorizing an actual change at that point.
+- **Scheduled re-evaluation cadence: piggyback on the existing
+  monthly/bye-week review cadence**, not a new schedule. At each
+  scheduled review, report current tagged-bet counts and rolling win
+  rates for both tags regardless of whether n=100 is reached yet
+  (transparency/tracking), but only actually consider changing severity
+  once that floor is hit for the specific tag in question.
+
+These numbers are proposals with reasoning attached, not settled —
+explicitly flagged for sign-off rather than defaulted into silently.
+
+### Shadow-mode question — reasoning, not yet decided by the user
+
+Asked whether this needs its own shadow-mode period before going live.
+Reasoning for **no dedicated shadow-mode period for the initial
+conservative downgrade, but track from day one**: this change can only
+ever suppress or demote an alert, never create one or alter the
+fair-value line — the worst-case failure mode is a missed alert
+(opportunity cost), not a bad number reaching the dashboard or a bet
+placed on a corrupted line. That's a fundamentally lower-risk failure
+mode than a Layers 1-4 change, which is what shadow mode was designed
+to guard against. The sample-size-gate structure above already provides
+an equivalent safeguard for the part that *would* carry more risk —
+changing severity based on live performance — by requiring deliberate,
+gated review (n=100, scheduled cadence) before any adjustment, rather
+than silent auto-tuning. Net: initial rollout doesn't need shadow mode;
+future severity *changes* effectively get one anyway via the gate
+structure, just framed as a review threshold rather than a calendar
+period.
+
 ## Data feed decisions (resolved)
 
 - **Weather**: `meteostat` (free) for historical backtest pull; NWS
