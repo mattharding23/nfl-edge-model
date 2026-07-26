@@ -327,6 +327,59 @@ or public-money line movement on favorites that a ratings-only model
 can't see. Re-check this bias explicitly whenever Layer 4 is backtested,
 same slice methodology as Step 3.
 
+## Kalman filter tail-miscalibration hypothesis — rejected
+
+Follow-up diagnostic (exploratory only, not committed pipeline code)
+tested whether the favorite-side/large-disagreement bias is a variance-
+calibration problem: posterior rating confidence growing faster than
+actual predictive accuracy, so the model's most extreme/confident
+predictions are systematically less reliable than moderate ones (which
+would explain both slices at once, since both select for extreme model
+output rather than a team characteristic). Used the full 2013-2024
+graded sample (3,084 games), not just the bad-bet slices.
+
+Binned games by |predicted margin| and separately by the Kalman
+filter's own posterior variance (`off_var`/`def_var` summed across the
+four ratings feeding the margin signal) into deciles:
+
+- **RMSE is flat across both binnings** — 12.8-14.7 pts regardless of
+  prediction magnitude (corr with squared error = 0.03), 12.0-15.0 pts
+  regardless of stated posterior confidence (corr = 0.002). No tail
+  degradation in either direction.
+- **Mean (signed) error is also flat** across magnitude bins (bounces
+  between -1.2 and +1.3, including -0.15 in the most extreme decile) —
+  no directional drift at the tails either.
+- **Ratio test**: the Kalman filter's own variance says the
+  most-confident decile should have ~65% the error-std of the
+  least-confident decile (0.646); observed RMSE ratio was 0.966 —
+  essentially no accuracy improvement despite much higher stated
+  confidence.
+
+**Conclusion: hypothesis rejected as an explanation for this bias.**
+Error doesn't get worse at the tails (ruling out the specific
+"confident predictions are less reliable" claim), and — logically, even
+before the numbers — a symmetric/uniform variance-calibration problem
+wouldn't naturally produce an *asymmetric* bias (favorites only, not
+underdogs), which is what Step 3 actually found. Did not proceed to
+isolating process vs. observation variance or building a shrinkage
+schedule, per the diagnostic's own stopping rule.
+
+**Separate, distinct finding worth keeping** (not a fix for this bias,
+but relevant to future confidence-tier/probability work): the ratio
+test shows the Kalman posterior variance carries close to zero real
+predictive information about actual error — not a tail-specific
+problem, a uniform one. Worth a dedicated look whenever confidence-tier
+calibration or probability outputs are built (CLAUDE.md's own
+backtest-derived confidence-tier requirement depends on this kind of
+signal being real), but it is not what's driving 44.5%/46.8%.
+
+**Two of three specific mechanisms now rejected for this bias**
+(garbage-time EPA, Kalman tail miscalibration); Layer 3 situational/
+injury context also showed no effect. Remaining candidates: the
+SRS-style opponent-adjustment mechanism itself, Layer 2's matchup-delta
+terms, or a Layer 4/market-side (public money on favorites) explanation
+that a ratings-only model structurally can't see.
+
 ## Data feed decisions (resolved)
 
 - **Weather**: `meteostat` (free) for historical backtest pull; NWS
