@@ -427,6 +427,51 @@ finding the remaining model-specific component (opponent-adjustment
 mechanism or Layer 2 matchup deltas — still open) matters at least as
 much as this market-side item.
 
+## Opponent-adjustment convergence hypothesis — rejected
+
+Follow-up diagnostic (exploratory only) tested whether the remaining
+~75% of the favorite-side bias (the share the market-wide effect above
+doesn't explain) comes from residual strength-of-schedule distortion:
+teams built up against a soft early-season schedule before Layer 1's
+opponent-adjustment had enough games to correct, producing lasting
+inflation. (Note: this repo's Layer 1 is a sequential Kalman filter, not
+a classic offline iterative SRS solve — see `power_ratings.py`'s own
+docstring on why — so this tested the analogous signature: elevated
+posterior uncertainty / incomplete stabilization for bias-driving teams
+at the time of their bad bet.)
+
+Compared the 284 favorite-slice bad-bet games (same games as prior
+sessions) against the league-wide sample, 2013-2024:
+
+- **Posterior variance — the filter's own formal measure of convergence
+  completeness — goes the wrong way.** Bias-driving teams: 0.0218 vs.
+  league 0.0271 (p<0.0001, Cohen's d=-0.19). Their ratings were *more*
+  confident/stable at bad-bet time, not less — directly contradicting
+  "incomplete convergence."
+- Two adjacent measures *did* move in the hypothesized direction: recent
+  week-over-week rating volatility was higher (0.124 vs 0.105, d=0.27),
+  and bad bets concentrated earlier in the season (mean week 8.6 vs 9.6;
+  43.0% in weeks 1-6 vs league's 33.8%, χ²=12.55, p=0.0057).
+
+**Conclusion: rejected as stated.** The most direct, literal test of
+"convergence completeness" contradicts the hypothesis. The early-week
+concentration and volatility instead point to a different, more precise
+candidate: teams with an unusually decisive/convincing early-season hot
+streak cause the Kalman filter to shrink variance *quickly* (correctly,
+by its own math, in response to extreme observations) before enough of
+the season has unfolded to know whether that start is representative —
+"overconfident from a hot start," not "hasn't converged yet." Not
+confirmed or investigated further this session; flagged for whoever
+picks this up next, distinct from today's rejected hypothesis.
+
+**Three of four specific mechanisms addressed for this bias**
+(garbage-time EPA rejected, Kalman tail miscalibration rejected,
+opponent-adjustment convergence rejected — this entry); market-wide
+favorite-longshot bias confirmed but only ~25% of the gap. Remaining
+candidates: Layer 2's matchup-delta terms (next up), the "hot start
+overconfidence" variant noted above, or further Layer 4/market-side
+investigation.
+
 ## Data feed decisions (resolved)
 
 - **Weather**: `meteostat` (free) for historical backtest pull; NWS
