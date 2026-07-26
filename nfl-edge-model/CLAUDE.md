@@ -520,6 +520,56 @@ build a backtest-derived confidence-tier discount for it directly, per
 CLAUDE.md's own design philosophy of deriving confidence from what
 actually happened rather than requiring a fully explained mechanism.
 
+## Hot-start overconfidence hypothesis — rejected (final mechanism search)
+
+Follow-up diagnostic (exploratory only) tested the "hot-start
+overconfidence" lead directly: does an early blowout-heavy stretch
+shrink Kalman variance too aggressively, locking in an overstated
+rating whose subsequent predictions are less reliable than its stated
+confidence implies — more so than the general population (which tested
+clean for this in the earlier tail-miscalibration session)?
+
+- **Front-loading is real** (descriptive/step 2): for the 717 bad-bet
+  team-seasons with an identifiable early rating jump (mean week 2.75),
+  the fraction of their eventual rating change that happened by week 4
+  is far higher than league-wide — median concentration ratio 0.998 vs.
+  0.476 (Mann-Whitney U, p=0.010; note the naive mean/t-test on this
+  ratio is misleading due to division-by-near-zero outliers — use the
+  rank-based test).
+- **But it doesn't cause overconfidence — the decisive test (step 3) is
+  flat.** Games in the weeks following a team's hot start were compared
+  against a league-wide baseline matched on the same posterior-variance
+  deciles (i.e., "similarly confident" predictions generally). Post-hot-
+  start RMSE=14.08 vs. matched baseline RMSE=13.64 — a 0.44-point gap
+  that is not significant (p=0.117, Cohen's d=0.042, negligible). RMSE
+  by weeks-since-hot-start shows no degrading pattern either (13.95 →
+  13.35 → 13.85 → 15.18 — worst RMSE is *furthest* from the hot start,
+  the opposite of what sustained overconfidence predicts).
+
+**Conclusion: rejected on its own decisive test.** The front-loading
+these teams show is real, but it turns out to be predictively benign —
+it does not translate into worse-than-expected accuracy relative to
+similarly-confident predictions elsewhere in the league.
+
+## Mechanism search concluded — five hypotheses tested, all rejected or non-explanatory
+
+Garbage-time EPA, Kalman tail miscalibration, opponent-adjustment
+convergence, Layer 2 matchup deltas, and hot-start overconfidence have
+all been tested against real data and rejected or shown non-explanatory,
+against a Layer 1 base-rating signal that is clearly, substantially,
+and consistently different for bad-bet teams (d=0.8-1.6) with no
+traceable construction flaw found. **Recommended next step: stop
+searching for a sixth mechanism.** Build a backtest-derived confidence-
+tier discount on the residual favorite-side bias directly (44.5%/46.8%
+win rates, tagged accordingly), per CLAUDE.md's own design philosophy —
+confidence tiers are meant to be derived from what actually happened
+per mechanism, not gated on a fully explained causal story. The
+market-wide favorite-longshot bias (confirmed, ~25% of the gap) and
+this residual (~75%, mechanism unknown) can both be handled the same
+way: as backtest-derived discounts on favorite-side edges, distinct
+from the fair-value line itself, which should stay an unbiased
+independent estimate.
+
 ## Data feed decisions (resolved)
 
 - **Weather**: `meteostat` (free) for historical backtest pull; NWS
