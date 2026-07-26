@@ -620,59 +620,116 @@ this plugs into doesn't exist in code yet (Step 6). This module is
 standalone, ready-to-wire-in infrastructure, not a modification to an
 existing alert loop.
 
-### Proposed sample-size gates and re-evaluation triggers — PENDING SIGN-OFF, not finalized
+### Sample-size gates and re-evaluation triggers — revised
 
-Two distinct gates, deliberately different sizes for different purposes:
+**The original n=100 gate was reasoned backwards and has been replaced.**
+It cited the 2011-2012 holdout (n=89-148) as evidence that sample sizes
+in that range are "informative enough to trust." On reconsideration:
+the holdout was informative because it *reversed* the original finding
+at that size (2011 alone: 51.4%/53.2%, wrong direction) — that's
+evidence n≈100-150 is exactly where misleading reads happen, not a
+validated trust threshold. Using it to justify n=100 was citing the
+failure mode as if it were the safeguard.
 
-- **Minimum sample size before *any* live-data-driven severity
-  adjustment is trusted: n=100 tagged bets, per tag, tracked
-  independently** (favorite_side_pick and large_disagreement_pick don't
-  share a counter — they can drift differently). Reasoning: a formal
-  power calculation to reliably distinguish a true 44% rate from 50% at
-  conventional power needs n≈530 — essentially the whole original
-  discovery sample, unrealistic to wait for on live data alone. n=100
-  is instead pragmatically anchored to the holdout itself: at n=89-148,
-  the 2011-2012 check was already informative enough to materially
-  change how much we trust the original numbers, even without being
-  statistically decisive. That's the bar — "informative enough to
-  matter," not "definitive."
-- **Ad hoc drift-flagging trigger (smaller n, detection only, no
-  severity change): 20 consecutive tagged bets per tag.** If the
-  rolling win rate over the last 20 tagged bets for either tag moves to
-  an extreme (proposed: >60% or <35%) — flag for review immediately, on
-  the existing "flagged for review, never auto-disabled" drift pattern
-  from CLAUDE.md's in-season change management. This exists to catch
-  something going obviously wrong (or obviously right, e.g. the tag
-  turning out unnecessary) well before the n=100 floor, without
-  authorizing an actual change at that point.
-- **Scheduled re-evaluation cadence: piggyback on the existing
-  monthly/bye-week review cadence**, not a new schedule. At each
-  scheduled review, report current tagged-bet counts and rolling win
-  rates for both tags regardless of whether n=100 is reached yet
-  (transparency/tracking), but only actually consider changing severity
-  once that floor is hit for the specific tag in question.
+**What a fixed gate would actually need to cost:** sizing a single fixed
+N requires guessing the true effect size in advance, and the plausible
+range the holdout leaves open (roughly 44-48%, not just the original
+discovery's 44.5%/46.8%) implies wildly different requirements:
 
-These numbers are proposals with reasoning attached, not settled —
-explicitly flagged for sign-off rather than defaulted into silently.
+| Assumed true rate | N to bare-exclude 50% | N to exclude with 2pp margin (≤48%) |
+|---|---|---|
+| 44% | ~260 | ~590 |
+| 46% | ~600 | ~2,390 |
+| 48% | ~2,400 | effectively unreachable |
 
-### Shadow-mode question — reasoning, not yet decided by the user
+A fixed gate sized for the optimistic case (44%) would repeat the exact
+mistake the holdout exposed — declaring victory on a technicality
+(bare exclusion, no margin) the way the original 46.8% CI of
+[43.7%, 49.9%] did. A fixed gate sized for the pessimistic case (48%)
+is likely never reachable given realistic live alert volume (backtest
+candidate volume was ~40-90 favorite-picks/season leaguewide even at a
+loose 1pt threshold; a live system with tighter edge+confidence gates
+will see fewer still). Neither a single number serves both scenarios.
 
-Asked whether this needs its own shadow-mode period before going live.
-Reasoning for **no dedicated shadow-mode period for the initial
-conservative downgrade, but track from day one**: this change can only
-ever suppress or demote an alert, never create one or alter the
-fair-value line — the worst-case failure mode is a missed alert
-(opportunity cost), not a bad number reaching the dashboard or a bet
-placed on a corrupted line. That's a fundamentally lower-risk failure
-mode than a Layers 1-4 change, which is what shadow mode was designed
-to guard against. The sample-size-gate structure above already provides
-an equivalent safeguard for the part that *would* carry more risk —
-changing severity based on live performance — by requiring deliberate,
-gated review (n=100, scheduled cadence) before any adjustment, rather
-than silent auto-tuning. Net: initial rollout doesn't need shadow mode;
-future severity *changes* effectively get one anyway via the gate
-structure, just framed as a review threshold rather than a calendar
-period.
+**Revised approach: a floor plus an adaptive margin condition, not one
+fixed N.**
+
+- **Floor — n=200 tagged bets per tag, below which severity is not
+  even evaluated.** Deliberately set clearly above the holdout's
+  demonstrated danger zone (89-148), not just marginally above it — the
+  floor exists purely to stop premature peeking at small, known-noisy
+  samples, not to imply trust at n=200 itself.
+- **Adaptive margin condition — above the floor, only adjust severity
+  once the live rolling 95% CI excludes 50% by at least 2 percentage
+  points on the relevant side** (upper bound ≤48% to justify keeping/
+  strengthening the discount; lower bound ≥52% to justify weakening or
+  dropping it). No fixed N attached — per the table above, this could
+  take a few hundred more tagged bets or several thousand, depending on
+  where the true rate actually sits. That's intentional: the gate
+  should reflect how much real information has accumulated, not a
+  calendar or count target picked in advance.
+- **This may take years, or may never clear — and that's fine.** The
+  conservative single-tier default is safe to hold indefinitely; unlike
+  a fixed deadline, this doesn't create pressure to act on a technically-
+  cleared-but-still-thin sample the way the original discovery's
+  bare-exclusion CI did.
+- **Worth considering (not adopted here, flagging for a future call):**
+  an asymmetric margin — easier to clear for *weakening/dropping* the
+  discount than for strengthening it. CLAUDE.md's own CLV-as-north-star
+  framing plus the shadow-mode gap below (a wrongly-kept discount costs
+  real, invisible CLV) both argue that erring toward removing an
+  unsupported discount should face a lower evidentiary bar than erring
+  toward adding one. Not built into the gate now because it adds a
+  second threshold to specify and wasn't asked for directly — flagging
+  it as a real option rather than deciding it unilaterally.
+- **Ad hoc drift-flagging trigger unchanged: 20 consecutive tagged bets
+  per tag, detection only, no severity change** — rolling win rate over
+  the last 20 moving to an extreme (>60% or <35%) flags for review on
+  the existing "flagged for review, never auto-disabled" pattern, well
+  before the n=200 floor. This was already right-sized and doesn't need
+  revision.
+- **Scheduled re-evaluation: still piggybacks on the existing monthly/
+  bye-week cadence**, reporting current counts and rolling rates
+  regardless of whether the floor is hit, but only considering a
+  severity change once both the floor and the margin condition are met.
+
+### Shadow-mode reasoning — gap closed, scoped into Step 6 instead of invented standalone
+
+The prior reasoning ("only suppresses, can't corrupt a line") was true
+but incomplete: a wrong suppression — tagging logic over-triggering, or
+a downgrade more aggressive than warranted — doesn't corrupt anything
+visibly, it just silently kills real, profitable alerts. Invisible cost
+is still cost; CLV is the project's north-star metric specifically
+because "nothing bad visibly happened" isn't the same as "nothing was
+lost."
+
+**Resolution: don't invent a standalone shadow period now** — there's
+no live alert-decision loop to shadow against yet (Step 6 not built).
+Instead, this is now a **named checklist item for Step 6's own
+shadow-mode harness**, so it can't be silently skipped when that step
+starts:
+
+> **Step 6 shadow-mode checklist item — confidence-tier tags:**
+> Before `favorite_side_pick` / `large_disagreement_pick` run
+> unmonitored in production, confirm during Step 6's shadow-mode period:
+> 1. The tags fire correctly against real/live alert candidates (not
+>    just backtest data) — spot-check a sample of shadow-mode picks
+>    against manual tag computation.
+> 2. The resulting suppression rate is sane relative to backtest
+>    expectation. **Backtest reference (2013-2024, >1pt-disagreement
+>    candidate pool, n=2,493): 55.7% of candidates carried at least one
+>    tag** (20.5% favorite_side_pick, 39.1% large_disagreement_pick,
+>    consistent with the n=97 measured overlap). If live suppression
+>    rate during shadow mode is much higher or lower than ~56% of
+>    candidates, that's a signal of a tagging bug or a live candidate
+>    pool that looks structurally different from the backtest
+>    population — investigate before letting it run unmonitored, don't
+>    assume the backtest rate transfers automatically.
+
+This keeps the safeguard the user is asking for (verify before
+unmonitored production use) without fabricating a shadow period for a
+loop that doesn't exist, and gives Step 6 a concrete, quantitative
+tripwire instead of a vague "check it looks reasonable" reminder.
 
 ## Data feed decisions (resolved)
 
