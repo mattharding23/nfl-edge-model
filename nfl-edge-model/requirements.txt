@@ -17,6 +17,9 @@ statsmodels>=0.14.0
 # Weather (historical backtest pull)
 meteostat>=2.1.0
 
+# Testing
+pytest>=8.0.0
+
 # Scheduling / env
 python-dotenv>=1.0.0
 

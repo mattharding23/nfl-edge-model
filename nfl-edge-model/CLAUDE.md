@@ -39,9 +39,18 @@ deferred to a later phase — do not build toward them yet.
 
 Fair value = no-vig consensus across books. Edge is measured and
 alerted against the **best available line** across: Bovada,
-DraftKings, FanDuel, Caesars, BetMGM, theScore (all via Odds API —
-note Bovada/theScore may need a different `region` param, e.g. `us2`,
-verify this early).
+DraftKings, FanDuel, Caesars, BetMGM, theScore (all via Odds API).
+
+**Region param question resolved (Step 1, re-verified in the Layer 4
+session)**: don't use a single `region` param at all — no single region
+covers all 6 books (`region=us2` gets `espnbet` but misses Bovada;
+`region=us` gets Bovada and Caesars/`williamhill_us` but misses
+`espnbet`). Use the explicit `bookmakers` param instead
+(`scripts/odds_api.py`'s `BOOKS` list), which bypasses region filtering
+entirely and returns all 6 in one call — confirmed live. theScore's
+current Odds API key is `espnbet` (Barstool Sportsbook → ESPN BET →
+theScore Bet lineage, same Penn Entertainment operator — see
+`odds_api.py`'s module docstring for the naming history).
 
 Confidence tiers are **backtest-derived per mechanism** (e.g.
 "rest+travel spread edges" graded on how that mechanism performed
@@ -741,6 +750,128 @@ tripwire instead of a vague "check it looks reasonable" reminder.
 - **No paid data vendor for v1** — Sportradar/SportsDataIO priced out at
   $500+/month sales-gated contracts, not justified before the model
   proves CLV. Revisit later only if the scrape proves unreliable.
+
+## Layer 4 (market layer) — built
+
+`scripts/market.py`: no-vig consensus fair probability (de-vigs each
+book individually, then averages across books — not a single-book
+de-vig, and not an average of still-vigged raw prices), best-available-
+price lookup, true EV and probability/points edge calculations, and
+opening-vs-current-vs-fair-value line tracking off `odds_snapshots`.
+19 unit tests in `tests/test_market.py` (`pytest tests/`), since every
+downstream edge number depends on the consensus function being correct.
+
+### Newly-discovered structural gap: model can't predict Week 1 of any season
+
+Confirmed live: the only NFL games currently listed by the Odds API are
+2026 Week 1 (Sept 10-15, 2026; 75 events). This exposed a limitation
+that wasn't previously stated explicitly: Layer 2's entering-week
+features (`matchup_adjustments.py`'s `add_entering_week_features`,
+grouped by `["team", "season"]`) have **no cross-season carryover** —
+unlike Layer 1's preseason-prior blend. `raw_efficiency_signal` in
+`backtest.py` returns `None` for every team's Week 1 game of every
+season, so the model **cannot currently generate a fair-value
+prediction for the only games presently live**. (This was already
+implicit in Step 3's backtest — Week 1 of every season is excluded
+from grading — but the live-prediction consequence hadn't been
+surfaced before Layer 4 made it concrete.) Not fixed this session;
+flagging as a real gap to close before Week 1 alerts can go live, not
+just a backtest footnote.
+
+### Live sanity check (Step 6 of this session's build)
+
+Since the model can't predict the only currently-live games (see
+above), the sanity check was split in two: the **odds/consensus/EV
+side of `market.py`** was demonstrated against a genuine live pull
+(2026 Week 1, 75 events); the **fair-value + tagging side** was
+demonstrated by extending `backtest.py`'s existing walk-forward
+machinery to `graded_end=2025` — the most recently completed season,
+with real closing lines, generating genuine (non-backtest-cached)
+predictions.
+
+**Odds/consensus/EV side** (live 2026 Week 1 pull): sampled one game
+(NE @ SEA) — all 6 books (`bovada`, `draftkings`, `fanduel`,
+`williamhill_us`, `betmgm`, `espnbet`) returned complete two-sided
+moneyline prices. Consensus fair prob: home 64.5% / away 35.5%. Best
+price: home -198 (DraftKings), away +184 (FanDuel). True EV at best
+price: home -2.93%, away +0.83% — output is sane (favorite priced
+below break-even at the best line, dog priced above, as expected for a
+vigged market with no real edge on a random sample game).
+
+**Fair-value + tagging side** (2025 walk-forward, 269 graded games,
+`predicted_margin` = Layer 1+2 baseline, `use_layer3=False`):
+- `favorite_side_pick`: n=56 (**20.8%**) — matches the 20.5% backtest
+  reference (2013-2024, n=2,493) almost exactly.
+- `large_disagreement_pick`: n=81 (**30.1%**) — notably below the
+  39.1% backtest reference. Single-season sample (n=269) vs. the
+  12-year discovery sample, so some gap is plausibly normal
+  year-to-year variance, but a 9pp gap is real and worth watching, not
+  waved off — if it persists across future seasons it would suggest
+  the 2013-2024 rate was itself not fully stable, on top of the
+  2011-2012 holdout instability already on record.
+- Both tags fire together: n=5 (1.9%), also lower than the historical
+  ~3.9%.
+- As an incidental bonus (2025 is out-of-sample relative to the
+  2013-2024 discovery window): both bias slices reproduced directionally
+  again — picked-favorite win rate 33.3% (n=33, p=0.029 vs. breakeven),
+  4pt+ disagreement win rate 40.7% (n=81, p=0.036 vs. breakeven) — a
+  third independent data point (after 2013-2024 discovery and the
+  2011-2012 holdout) in the same direction, though still not enough by
+  itself to treat the original magnitudes as confirmed.
+
+Conclusion: tagging logic fires sensibly on genuine live-pipeline
+output on both the odds side and the prediction side; the
+`large_disagreement_pick` rate gap is noted for future monitoring, not
+treated as a problem to fix now.
+
+### Steam detection — PROPOSED, pending sign-off, not implemented
+
+**Bigger structural question first, before the specific thresholds
+below matter at all:** the current cron cadence (Tue/Wed initial line →
+Thu evening re-run → ~90 min pre-kickoff final pass) is only **3 pulls
+per week**. That's fundamentally incompatible with detecting "a move
+within 30 minutes" — with 3 snapshots, we only ever see the *net*
+change between infrequent pulls, never real intra-window velocity. Any
+steam definition using a short time window requires a much higher pull
+frequency than the current pipeline provides.
+
+**This is affordable to fix, confirmed live**: a full-slate live pull
+(all games, all 6 books, h2h+spreads+totals) costs **3 credits**,
+regardless of game or book count (the `bookmakers` param batches
+everything into one call). Polling every 10-15 minutes for a 4-hour
+pre-kickoff window would cost roughly 50-75 credits per game window —
+trivial against the ~18,600-credit remaining budget. **Proposed fix:
+replace the single "~90 min pre-kickoff" pass with a higher-frequency
+polling window** (e.g., every 10-15 min starting 3-4 hours before
+kickoff) — this is a real design/cost decision, not just a threshold
+number, and needs sign-off alongside the thresholds below since the
+thresholds are meaningless without it.
+
+**Proposed definition** (assumes the polling-frequency fix above):
+
+- **Magnitude**: ≥1.5 points (spread/total) OR ≥4 percentage points of
+  no-vig implied probability (moneyline). These aren't independent
+  guesses — a 1.5-point shift in expected margin maps to roughly a
+  4.4pp win-probability shift under a normal(0, 13.5) margin
+  distribution (13.5 ≈ the residual std found across Step 3's
+  backtest), so the two thresholds are calibrated to represent
+  comparable market significance, not picked separately.
+- **Time window**: within 30 minutes. Steam is classically described as
+  rapid/coordinated (minutes, not hours) — a same-magnitude move spread
+  gradually across a full day is drift (public money, slow information
+  diffusion), not steam.
+- **Corroboration**: same-direction movement at ≥3 of the 6 tracked
+  books. Filters out a single book managing its own liability
+  (idiosyncratic, not market-wide signal) without requiring unanimous
+  agreement, which is stricter than real steam moves typically show.
+
+**None of these magnitude/window/corroboration numbers are validated
+against real data yet** — they're reasoned defaults, same standard as
+the confidence-tier severity work, not backtested. `market.py`'s
+`propose_steam_definition()` returns this same text so the proposal and
+the (currently unimplemented) detector logic can't silently drift apart
+once thresholds are approved. Not implemented pending sign-off on both
+the polling-frequency change and the specific numbers.
 
 ## Open decisions (confirm during build, don't block on them)
 
